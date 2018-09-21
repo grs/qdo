@@ -2,3 +2,5 @@ apiVersion: "grs.github.io/v1alpha1"
 kind: "Router"
 metadata:
   name: "example"
+spec:
+  size: 2
