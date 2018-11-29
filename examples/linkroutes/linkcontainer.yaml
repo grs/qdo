@@ -1,0 +1,4 @@
+apiVersion: "grs.github.io/v1alpha1"
+kind: "Router"
+metadata:
+  name: "linkcontainer"

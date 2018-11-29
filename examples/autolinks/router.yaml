@@ -1,0 +1,20 @@
+apiVersion: "grs.github.io/v1alpha1"
+kind: "Router"
+metadata:
+  name: "example"
+spec:
+  addresses:
+    - prefix: foo
+      waypoint: true
+  autolinks:
+    - addr: foo
+      direction: in
+      connection: my-waypoint
+    - addr: foo
+      direction: out
+      connection: my-waypoint
+  connectors:
+    - name: my-waypoint
+      host: my-waypoint
+      port: 5672
+

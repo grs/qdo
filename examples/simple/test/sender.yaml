@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sender
+  labels:
+    app: qdo-test
+spec:
+  restartPolicy: Never
+  containers:
+  - name: responder
+    image: gordons/connectivity-test:1.0
+    command: ['/send', '-r', '1@responder-a', '-r', '1@responder-b', '-a', 'test']
+    volumeMounts:
+    - name: connect
+      mountPath: "/etc/messaging/"
+      readOnly: true
+  volumes:
+  - name: connect
+    secret:
+      secretName: connect-config

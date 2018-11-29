@@ -1,0 +1,137 @@
+#!/usr/bin/env python
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+from __future__ import print_function, unicode_literals
+import optparse
+from proton import Message
+from proton.handlers import MessagingHandler
+from proton.reactor import Container
+
+class Send(MessagingHandler):
+    def __init__(self, address, messages, responders, multicast, verbose):
+        super(Send, self).__init__()
+        self.address = address
+        self.responders = set(responders or [])
+        self.multicast = multicast
+        self.verbose = verbose
+        self.messages = [Message(body="message-%i" % i, correlation_id=i) for i in range(messages)]
+        self.requests = [i for i in range(messages)]
+        self.sent = 0
+        self.received = 0
+        self.confirmed = 0
+        self.released = 0
+        self.rejected = 0
+        self.replies = {}
+
+    def on_start(self, event):
+        conn = event.container.connect()
+        self.sender = event.container.create_sender(conn, self.address)
+        self.receiver = event.container.create_receiver(conn, None, dynamic=True)
+
+    def next_request(self):
+        if self.receiver.remote_source.address and len(self.requests):
+            i = self.requests.pop(0)
+            req = self.messages[i]
+            req.reply_to=self.receiver.remote_source.address
+            self.sender.send(req, tag=str(i))
+            self.sent += 1
+
+    def send_requests(self):
+        while self.receiver.remote_source.address and self.sender.credit and len(self.requests):
+            self.next_request()
+
+    def have_response_for_all_requests(self):
+        return ['%s missing a response' % msg.body for msg in self.messages if len(self.replies.get(msg.correlation_id, [])) == 0]
+
+    def incomplete(self):
+        if self.responders:
+            if self.multicast:
+                missing = [(msg.body, self.responders.difference(set(self.replies.get(msg.correlation_id, [])))) for msg in self.messages]
+                return ['%s missing responses from %s' % m for m in missing if m[1]]
+            else:
+                # verify that each message got a reply
+                issues = self.have_response_for_all_requests()
+                # verify that we got at least one reply from each responder
+                all_responders = set()
+                for msg in self.messages:
+                    all_responders = all_responders | set(self.replies.get(msg.correlation_id, []))
+                missing = self.responders.difference(all_responders)
+                if missing:
+                    issues.append('no response received from %s' % missing)
+                return issues
+        else:
+            return self.have_response_for_all_requests()
+
+    def is_complete(self):
+        issues = self.incomplete()
+        if self.verbose:
+            print(issues)
+        return len(issues) == 0
+
+    def on_link_opened(self, event):
+        if event.receiver == self.receiver:
+            self.send_requests()
+
+    def on_sendable(self, event):
+        self.send_requests()
+
+    def on_message(self, event):
+        if self.verbose:
+            print(event.message.subject, event.message.body)
+        self.received += 1
+        if not event.message.correlation_id in self.replies:
+            self.replies[event.message.correlation_id] = []
+        self.replies[event.message.correlation_id].append(event.message.subject)
+        if self.is_complete():
+            print('ok (%i requests sent, %i responses received, %i released/rejected)' % (self.sent, self.received, self.released + self.rejected))
+            event.connection.close()
+
+    def on_accepted(self, event):
+        self.confirmed += 1
+
+    def on_released(self, event):
+        self.released += 1
+        self.requests.append(int(event.delivery.tag))
+        self.send_requests()
+
+    def on_rejected(self, event):
+        self.rejected += 1
+        self.requests.append(int(event.delivery.tag))
+        self.send_requests()
+
+    def on_disconnected(self, event):
+        self.sent = self.confirmed
+
+parser = optparse.OptionParser(usage="usage: %prog [options]",
+                               description="Send messages to the supplied address.")
+parser.add_option("-a", "--address", default="examples",
+                  help="address to which messages are sent (default %default)")
+parser.add_option("-m", "--messages", type="int", default=100,
+                  help="number of messages to send (default %default)")
+parser.add_option("-r", "--responder", action="append", dest="responders",
+                  help="identifier of expected responder (multiple responders can be specified)")
+parser.add_option("--multicast", action="store_true", dest="multicast",
+                  help="whether address is expected to be multicast (in which case responses from each known responder are expected)")
+parser.add_option("-v", "--verbose", action="store_true", dest="verbose", help="enable verbose output")
+opts, args = parser.parse_args()
+
+try:
+    Container(Send(opts.address, opts.messages, opts.responders, opts.multicast, opts.verbose)).run()
+except KeyboardInterrupt: pass

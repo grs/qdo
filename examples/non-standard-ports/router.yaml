@@ -1,0 +1,11 @@
+apiVersion: "grs.github.io/v1alpha1"
+kind: "Router"
+metadata:
+  name: "example"
+spec:
+  listeners:
+    - port: "6672"
+    - port: "8080"
+      http: true
+    - port: "7777"
+      routeContainer: true

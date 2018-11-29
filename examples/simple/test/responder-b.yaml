@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: responder-b
+  labels:
+    app: qdo-test
+spec:
+  containers:
+  - name: responder
+    image: gordons/connectivity-test:1.0
+    command: ['/recv', '-a', 'test']
+    volumeMounts:
+    - name: connect
+      mountPath: "/etc/messaging/"
+      readOnly: true
+  volumes:
+  - name: connect
+    secret:
+      secretName: connect-config

@@ -1,0 +1,23 @@
+apiVersion: "grs.github.io/v1alpha1"
+kind: "Router"
+metadata:
+  name: "example"
+spec:
+  linkRoutes:
+    - prefix: foo
+      direction: in
+      connection: linkcontainer
+    - prefix: foo
+      direction: out
+      connection: linkcontainer
+    - prefix: bar
+      direction: in
+      connection: linkcontainer
+    - prefix: baz
+      direction: out
+      connection: linkcontainer
+  connectors:
+    - name: linkcontainer
+      host: linkcontainer
+      port: 5672
+
